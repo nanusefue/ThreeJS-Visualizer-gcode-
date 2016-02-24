@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Getting Started with Three.js</title>    
+    <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+    <script src="http://threejs.org/build/three.min.js"></script>
+    <script src="stats.js"></script>
+    <script src="TrackballControls.js" ></script> 
+    <script src="data.ui.js"></script>
+<style>
+</style>
+
+
+</head>
+<body>
+</body>
+<script>
+
+
+
+var xmlhttp,file,args;
+if (window.XMLHttpRequest)
+  {// code for IE7+, Firefox, Chrome, Opera, Safari
+      xmlhttp=new XMLHttpRequest();
+  }
+else
+  {// code for IE6, IE5
+      xmlhttp=new ActiveXObject("Microsoft.XMLHTTP");
+  }
+
+xmlhttp.onreadystatechange=function()
+  {
+    if (xmlhttp.readyState==4 )
+    {
+        file=xmlhttp.responseText;
+        console.log("Ready!!!");
+        ControlsLayer(ParserGcode(file));
+        console.log("finish");  
+    }
+  }
+//xmlhttp.open("GET","laserholdv01.gcode",true);
+xmlhttp.open("GET","planter-6cm.gcode",true);
+xmlhttp.send();
+
+var guiControllers = {
+    maxlayer: undefined,
+    minlayer:0
+};
+
+var flag=false;
+var layer;
+
+function setupGui(layers) {
+  var gui = new dat.GUI();
+  jQuery('.dg.main').mousedown(function(event) {
+      event.stopPropagation();
+  });
+
+  effectController = {
+    minlayer:0,
+    maxlayer: layers.length,
+  };
+  var tope=0;
+
+
+  guiControllers.maxlayer = gui.add(effectController, "maxlayer",0).min(1).max(layers.length).step(1)
+  guiControllers.minlayer = gui.add(effectController, "minlayer",0).min(0).max(layers.length-1).step(1)
+  guiControllers.minlayer.onChange(function(value) {
+      flag=true;
+   });
+ guiControllers.maxlayer.onChange(function(value) {
+     flag=true;
+  });
+}; 
+
+
+
+  var  renderer = new THREE.WebGLRenderer();
+ renderer.setSize(window.innerWidth, window.innerHeight);
+ var element=document.body.appendChild(renderer.domElement);
+ var scene = new THREE.Scene();
+
+//scene.fog = new THREE.Fog( 0x111111, 150, 200 );
+
+
+var gcodes=new Array();
+var colors=new Array();
+var layers=new Array();
+var lines=new Array();
+
+function ParserGcode(file){
+    var prevZ,z=0;
+    var reg = new RegExp(/^(?:G0|G1)\s/i);
+    var gcode=file.split(/\n/);
+  for(var i=0;i<gcode.length;i++)
+  {
+      gcode[i] = gcode[i].split(/[\(;]/)[0];
+      if(reg.test(gcode[i])){
+          var data=new Array();
+          var args = gcode[i].split(/\s/);
+          for(j=0;j<args.length;j++){
+              switch(argChar = args[j].charAt(0).toLowerCase()){
+                        case 'x':
+                            data.push(args[j].slice(1));
+                            break;
+                        case 'y':
+                            data.push(args[j].slice(1));
+                            break;
+                        case 'z':
+                            z=args[j].slice(1);
+                            break;
+                        default:
+                              continue;
+              }
+          }
+      if(data.length!=0){
+         data.push(z)
+         lines.push(data);
+         prevZ=z;
+      }
+      if(prevZ!=z && lines.length!=0)
+      {
+        layers.push(lines); 
+        lines=new Array();
+      } 
+    }    
+  }
+  return layers;
+    
+}
+ 
+
+
+function ControlsLayer(layers){
+        setupGui(layers);
+        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 10000);
+        camera.position.z=300;
+        controls = new THREE.TrackballControls( camera );
+        controls.rotateSpeed = 5.0;
+        controls.zoomSpeed = 3.2;
+        controls.panSpeed = 1.8;
+        controls.noZoom = false;
+        controls.noPan = false;
+        controls.staticMoving = true;
+        controls.dynamicDampingFactor = 0.3;
+        controls.keys = [ 65, 83, 68 ];
+        var  material = new THREE.LineBasicMaterial( { color: 0xffffff, opacity: 1, linewidth: 1, vertexColors: THREE.VertexColors } );
+ 
+
+
+function v(x,y,z)
+{
+  return new THREE.Vector3(x,y,z);
+} 
+
+function createAxis(p1, p2, color)
+{
+    var line, lineGeometry = new THREE.Geometry(),
+    lineMat = new THREE.LineBasicMaterial({color: color, lineWidth: 1});
+    lineGeometry.vertices.push(p1, p2);
+    line = new THREE.Line(lineGeometry, lineMat );
+    scene.add(line);
+}
+
+  
+
+function LayerMinMax(minlayer,maxlayer){
+  var box=new THREE.Box3();
+  var obj=new THREE.Object3D();
+  obj.name="gcode";
+  if(maxlayer==0)
+    maxlayer=layers.length;
+
+ // var geometry = new THREE.Geometry();
+  for(var t=minlayer;t<maxlayer;t++)
+  {
+       var geometry = new THREE.Geometry();
+  
+      var ff=layers[t];
+      for(var l=0;l<ff.length;l++)
+      {
+          geometry.vertices.push(new THREE.Vector3(ff[l][0],ff[l][1],ff[l][2]));
+       
+      }
+
+        var liness = new THREE.Line(geometry,  new THREE.LineDashedMaterial( { color: 0xD42B55, dashSize: 3, gapSize: 1, linewidth: 1 } ));
+        liness.name="layer"+t;
+        obj.add(liness);
+
+  
+  }
+
+  var l = scene.children.length;
+    //remove everything
+
+//remover del objeto el children xD
+  
+  while (l--) {
+    if(scene.children[l] instanceof THREE.Camera) continue; //leave camera in the scene
+       scene.remove(scene.children[l]);
+    }
+
+
+  box.setFromObject(obj);
+
+  //console.log(box.min);
+
+
+  scene.updateMatrixWorld(true);
+
+  var position = new THREE.Vector3();
+  position.getPositionFromMatrix( obj.matrixWorld );
+  obj.position.x=position.x-box.min.x;
+  obj.position.y=position.y-box.min.y;
+  //obj.position.z=position.z-box.min.z;
+
+  createAxis(v(-100, 0, 0), v(100, 0, 0), 0xFF0000);
+  createAxis(v(0, -100, 0), v(0, 100, 0), 0x00FF00);
+  createAxis(v(0, 0, -100), v(0, 0, 100), 0x0000FF);
+  scene.add(obj);
+  flag=false;
+}
+
+LayerMinMax(0,0);
+
+
+
+window.onresize = function(event) {
+      renderer.setSize(element.width(), element.height());
+    camera.aspect = element.width() / element.height();
+    camera.updateProjectionMatrix();
+    controls.screen.width = window.innerWidth;
+   controls.screen.height = window.innerHeight;
+
+ }
+
+
+function animate() {
+    requestAnimationFrame( animate );
+    render();
+}
+
+
+function render() 
+{
+    if( effectController && layers &&flag ) {
+        LayerMinMax(effectController.minlayer,effectController.maxlayer);
+      }
+
+    controls.update();
+    renderer.setClearColor( 0xffffff, 1 );
+
+    renderer.clear();
+    renderer.render( scene, camera );
+
+}
+
+  animate();
+}
+</script>
+
+<script>
+
+    controls.addEventListener( 'change', render );
+
+
+
+
+</script>
+</html>
